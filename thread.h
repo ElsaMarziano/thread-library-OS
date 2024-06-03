@@ -18,19 +18,22 @@ class Thread
   Thread::get_entry_point();
   Thread::get_bound();
   Thread::get_stack();
-  Thread::change_state(State state);
+  Thread::get_quantum_counter();
+  Thread::set_state(State state);
 
 
 
 //quantum counters
 
  private:
-  int tid;
-  State state;
-  char *stack;
-  void (*entry_point) (void);
-  int bound;
-  int quantum_counter;
+  int _tid;
+  State _state;
+  char *_stack;
+  void (*_entry_point) (void);
+  int _bound;
+  int _quantum_counter;
+  sigjmp_buf _env;
+
 
 
 };
