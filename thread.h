@@ -12,12 +12,16 @@ class Thread
 
   Thread (int tid);
   Thread (int tid, void (*entry_point) (void), char *stack);
-//  Thread::terminate();
+  ~Thread();
+  Thread::get_tid();
+  Thread::get_state();
+  Thread::get_entry_point();
+  Thread::get_bound();
+  Thread::get_stack();
+  Thread::change_state(State state);
 
-//  terminate
-//state change
-//return id??
-//get entry point
+
+
 //quantum counters
 
  private:
@@ -26,6 +30,7 @@ class Thread
   char *stack;
   void (*entry_point) (void);
   int bound;
+  int quantum_counter;
 
 
 };
