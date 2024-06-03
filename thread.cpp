@@ -44,15 +44,15 @@ address_t translate_address(address_t addr)
 #endif
 
 // Constructor for main
-Thread::Thread(int tid, sigjmp_buf env)
-        : tid(tid), state(READY), quantum_counter(0), _env(env)
+Thread::Thread(int tid)
+        : tid(tid), state(READY), quantum_counter(0)
 {
     _stack = new char[STACK_SIZE];
 }
 
-Thread::Thread(int tid, void (*entry_point)(void), sigjmp_buf env)
+Thread::Thread(int tid, void (*entry_point)(void))
         : tid(tid),
-          entry_point(entry_point), state(READY), bound(STACK_SIZE), quantum_counter(0), _env(env)
+          entry_point(entry_point), state(READY), bound(STACK_SIZE), quantum_counter(0)
 {
     _stack = new char[STACK_SIZE];
     address_t sp, pc;
@@ -84,10 +84,14 @@ int Thread::get_quantum_counter() {return quantum_counter;}
 
 State Thread::set_state(State state)
 {
-    if (state == RUNNING)
+    if (state == RUNNING && _state == READY)
     {
         quantum_counter++;
         siglongjmp(_env, 1);
+    }
+    else if (_state == RUNNING && state != RUNNING)
+    {
+        sigsetjmp(_env, 1);
     }
     _state = state;
 }
