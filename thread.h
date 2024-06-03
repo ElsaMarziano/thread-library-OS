@@ -1,6 +1,10 @@
 #ifndef _THREAD_H_
 #define _THREAD_H_
 
+#include "uthreads.h"
+#include <setjmp.h>
+
+
 enum State
 {
     READY, RUNNING, BLOCKED
@@ -13,13 +17,13 @@ class Thread
   Thread (int tid);
   Thread (int tid, void (*entry_point) (void), char *stack);
   ~Thread();
-  Thread::get_tid();
-  Thread::get_state();
-  Thread::get_entry_point();
-  Thread::get_bound();
-  Thread::get_stack();
-  Thread::get_quantum_counter();
-  Thread::set_state(State state);
+  int get_tid();
+  char* get_state();
+  thread_entry_point get_entry_point();
+  int get_bound();
+  char* get_stack();
+  int* get_quantum_counter();
+  State set_state(State state);
 
 
 

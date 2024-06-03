@@ -1,5 +1,4 @@
 #include "thread.h"
-#include "uthreads.h"
 #include <iostream>
 
 #ifdef __x86_64__
@@ -71,19 +70,19 @@ Thread::~Thread()
     delete[] stack;
 }
 
-Thread::get_tid() {return tid;}
+int Thread::get_tid() {return tid;}
 
-Thread::get_state() {return state;}
+State Thread::get_state() {return state;}
 
-Thread::get_entry_point() {return entry_point;}
+thread_entry_point Thread::get_entry_point() {return entry_point;}
 
-Thread::get_bound() {return bound;}
+int Thread::get_bound() {return bound;}
 
-Thread::get_stack() {return stack;}
+char* Thread::get_stack() {return stack;}
 
-Thread::get_quantum_counter() {return quantum_counter;}
+int Thread::get_quantum_counter() {return quantum_counter;}
 
-Thread::set_state(State state)
+State Thread::set_state(State state)
 {
     if (state == RUNNING)
     {
