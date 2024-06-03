@@ -1,5 +1,10 @@
 #include "thread.h"
 #include <iostream>
+#include <setjmp.h>
+#include <signal.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <stdbool.h>
 
 #ifdef __x86_64__
 /* code for 64 bit Intel arch */
@@ -45,19 +50,21 @@ address_t translate_address(address_t addr)
 
 // Constructor for main
 Thread::Thread(int tid)
-        : tid(tid), state(READY), quantum_counter(0)
+        : _tid(tid), _state(READY), _quantum_counter(0)
 {
     _stack = new char[STACK_SIZE];
+
 }
 
 Thread::Thread(int tid, void (*entry_point)(void))
-        : tid(tid),
-          entry_point(entry_point), state(READY), bound(STACK_SIZE), quantum_counter(0)
+        : _tid(tid),
+          _entry_point(entry_point), _state(READY), _bound(STACK_SIZE),
+          _quantum_counter(0)
 {
     _stack = new char[STACK_SIZE];
     address_t sp, pc;
-    sp = (address_t) stack + STACK_SIZE - sizeof(address_t);
-    pc = (address_t) entry_point;
+    sp = (address_t) _stack + STACK_SIZE - sizeof(address_t);
+    pc = (address_t) _entry_point;
     if (sigsetjmp(_env, 1) == 0) {
         (_env->__jmpbuf)[JB_SP] = translate_address(sp);
         (_env->__jmpbuf)[JB_PC] = translate_address(pc);
@@ -67,26 +74,26 @@ Thread::Thread(int tid, void (*entry_point)(void))
 
 Thread::~Thread()
 {
-    delete[] stack;
+    delete[] _stack;
 }
 
-int Thread::get_tid() {return tid;}
+int Thread::get_tid() {return _tid;}
 
-State Thread::get_state() {return state;}
+State Thread::get_state() {return _state;}
 
-thread_entry_point Thread::get_entry_point() {return entry_point;}
+thread_entry_point Thread::get_entry_point() {return _entry_point;}
 
-int Thread::get_bound() {return bound;}
+int Thread::get_bound() {return _bound;}
 
-char* Thread::get_stack() {return stack;}
+char* Thread::get_stack() {return _stack;}
 
-int Thread::get_quantum_counter() {return quantum_counter;}
+int Thread::get_quantum_counter() {return _quantum_counter;}
 
-State Thread::set_state(State state)
+void Thread::set_state(State state)
 {
     if (state == RUNNING && _state == READY)
     {
-        quantum_counter++;
+        _quantum_counter++;
         siglongjmp(_env, 1);
     }
     else if (_state == RUNNING && state != RUNNING)

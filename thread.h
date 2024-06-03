@@ -2,7 +2,8 @@
 #define _THREAD_H_
 
 #include "uthreads.h"
-#include <setjmp.h>
+#include <stdio.h>
+//#include <setjmp.h>
 
 
 enum State
@@ -15,15 +16,15 @@ class Thread
  public:
 
   Thread (int tid);
-  Thread (int tid, void (*entry_point) (void), char *stack);
+  Thread (int tid, void (*entry_point) (void));
   ~Thread();
   int get_tid();
-  char* get_state();
+  State get_state();
   thread_entry_point get_entry_point();
   int get_bound();
   char* get_stack();
-  int* get_quantum_counter();
-  State set_state(State state);
+  int get_quantum_counter();
+  void set_state(State state);
 
 
 
