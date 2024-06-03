@@ -1,0 +1,30 @@
+1. The sigsetjmp function saves the current state of the thread while the siglongjmp function restores the state
+of the thread that was saved by the sigsetjmp function. The state contains the context of the thread, and the signal mask.
+The sigsetjmp function receives env as a parameter, which contains among other things the signal mask - a list of signals
+to ignore. When calling siglongjmp, the state of the thread is restored to the state saved by sigsetjmp, including the
+signal mask.
+
+2. A server could use user level threads to handle multiple clients. The server needs to handle each request concurrently,
+and user level threads can be used to handle each request in a separate thread. The server can create a new thread for
+each client request, and the thread can handle the request. This allows quick context switching between threads, without
+the overhead of processes or  kernel level threads. This way the server can handle multiple clients concurrently without
+high overhead of using the operating system.
+
+3. Advantages: Processes assure that the program will continue to run even if one of the processes crashes. They also
+assure a high level of security, as each process has its own memory space and cannot access the memory of other processes,
+in this example they assure one tab cannot access the informations of another tab (passwords, credits card and such).
+Disadvantages: Processes are slower to create and manage than threads, as they require more resources. They also require
+more memory, as each process has its own memory space. In this example, this can be a problem when a user opens multiple
+tabs at once as each tab will require more memory and the overall performance of the browser will decrease.
+
+4. There are different kinds of signals and interrupts involved in the process. First, a keyboard interrupt when typing
+in the command shell.
+Then, the kill command is a OS interrupt. When it is executed, it sends a signal to the specified process (Shotwell).
+The operating system manages signals and interrupts at the kernel level to handle this command.
+When receiving the kill command, the OS sends a signal to the application's process. Then Shotwell receives the signal
+and starts its shutdown procedure.
+
+5. Real time is the actual time that it takes for a thread or a process to run, in the physical hardware.
+On the other hand, virtual time is the time that the thread or process perceives that it takes to run. It depends on
+the scheduling algorithm and the number of threads or processes running on the system. Virtual time can be different from
+real time, as the thread or process may be waiting for other threads or processes to finish before it can run.
