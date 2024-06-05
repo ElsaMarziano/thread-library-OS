@@ -69,7 +69,7 @@ Thread::Thread(int tid, void (*entry_point)(void))
         (_env->__jmpbuf)[JB_SP] = translate_address(sp);
         (_env->__jmpbuf)[JB_PC] = translate_address(pc);
         sigemptyset(&_env->__saved_mask);
-    }
+    } // TODO add throw error?
 }
 
 Thread::~Thread()
@@ -94,11 +94,10 @@ void Thread::set_state(State state)
     if (state == RUNNING && _state == READY)
     {
         _quantum_counter++;
-        siglongjmp(_env, 1);
-    }
-    else if (_state == RUNNING && state != RUNNING)
-    {
-        sigsetjmp(_env, 1);
     }
     _state = state;
+}
+
+sigjmp_buf* Thread::get_env() {
+  return &_env;
 }

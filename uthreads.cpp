@@ -2,6 +2,8 @@
 #include <string>
 #include <map>
 #include <list>
+#include <bits/stdc++.h>
+
 #include "thread.h"
 #include "uthreads.h"
 
@@ -13,6 +15,8 @@ int quantum_counter;
 list<Thread *> ready_queue;
 std::map<int, Thread*> threads;
 Thread *running_thread;
+priority_queue <int, vector<int>, greater<int> > indexes; // Min heap
+
 // Add counter map for blocked threads
 
 void system_error (string error)
@@ -33,6 +37,10 @@ int uthread_init (int quantum_usecs)
     print_library_error ("quantum_usecs must be positive");
     return -1;
   }
+  for (int i = 1; i < MAX_THREAD_NUM; i++)
+  {
+    indexes.push (i);
+  }
   quantum_counter = 0;
   quantum_length = quantum_usecs;
   Thread *main = new Thread (0);
@@ -40,11 +48,8 @@ int uthread_init (int quantum_usecs)
 // Add signals somehow
 // Add timer ????
   running_thread = main;
-
   main->set_state (RUNNING);
-
   quantum_counter = 1;
-
   return 0;
 }
 
@@ -62,7 +67,7 @@ int uthread_spawn (thread_entry_point entry_point)
     return -1;
   }
   // Create new thread
-  int next_index = 1;
+  int next_index = indexes.top ();
   Thread *new_thread = new Thread (next_index, entry_point);
   threads[next_index] = new_thread;
   if (threads[next_index]->get_state () == READY) // Check this if is needed
@@ -76,7 +81,7 @@ int uthread_spawn (thread_entry_point entry_point)
 int uthread_terminate (int tid)
 {
 //  TODO check if need to free memory
-  if (tid == 0)
+  if (tid == 0) // Terminating main
   {
 //     Check this is OK
     for (auto &thread: threads)
@@ -96,9 +101,10 @@ int uthread_terminate (int tid)
     else
     {
 //      Handle termination
-// Add id to minheap
+
       delete threads[tid];
       threads.erase (tid);
+      indexes.push(tid);
       return 0;
     }
   }
@@ -119,10 +125,11 @@ int uthread_block (int tid)
   // Change thread state
   if (threads[tid]->get_state () == RUNNING)
   {
+    sigsetjmp(*(threads[tid]->get_env()), 1);
     // Handle thread blocking itself
   }
-  threads[tid]->set_state (BLOCKED);
 
+  threads[tid]->set_state (BLOCKED);
   return 0;
 }
 
@@ -134,11 +141,12 @@ int uthread_resume (int tid)
     return -1;
   }
   else if (threads[tid]->get_state() != BLOCKED)
-  { return 0; }
+  {
+    return 0;
+  }
 
-//  Change state to READY
+//  Change state to READY, add to queue
   threads[tid]->set_state (READY);
-// Add thread to queue
   ready_queue.push_back(threads[tid]);
   return 0;
 }
@@ -183,6 +191,8 @@ int uthread_get_quantums (int tid)
 // Return thread quantum counter
   return threads[tid]->get_quantum_counter ();
 }
+
+
 
 
 

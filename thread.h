@@ -2,8 +2,9 @@
 #define _THREAD_H_
 
 #include "uthreads.h"
-#include <stdio.h>
-//#include <setjmp.h>
+#include <setjmp.h>
+
+
 
 
 enum State
@@ -25,6 +26,7 @@ class Thread
   char* get_stack();
   int get_quantum_counter();
   void set_state(State state);
+  sigjmp_buf* get_env();
 
 
 
