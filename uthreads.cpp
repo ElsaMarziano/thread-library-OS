@@ -8,7 +8,6 @@
 #include "thread.h"
 #include "uthreads.h"
 
-
 using namespace std;
 
 int USECS_IN_SEC = 1000000;
@@ -16,9 +15,10 @@ int USECS_IN_SEC = 1000000;
 int quantum_length;
 int quantum_counter;
 list<Thread *> ready_queue;
-std::map<int, Thread*> threads;
+std::map<int, Thread *> threads;
 Thread *running_thread;
-priority_queue <int, vector<int>, greater<int> > indexes; // Min heap
+priority_queue<int, vector<int>, greater<int> > indexes; // Min heap
+struct itimerval timer = {0};
 
 // Add counter map for blocked threads
 
@@ -30,34 +30,51 @@ void print_system_error (string error)
 
 void print_library_error (string error)
 {
-  std::cerr << "thread library error: " << error << std::endl;
+//  std::cerr << "thread library error: " << error << std::endl;
+  return;
 }
 
-void switch_threads() {
-    // Save current thread state
-    running_thread->set_state(READY);
-
+void switch_threads (bool is_terminating = false)
+{
+  if (ready_queue.empty ())
+  {
+    running_thread->set_state (READY);
+    running_thread->set_state (RUNNING);
+    return;
+  };
+  if (sigsetjmp (*(running_thread->get_env ()), 1) == 1)
+  {
+    return;
+  }
+  // Save current thread state
+  if (!is_terminating)
+  {
+    running_thread->set_state (READY);
     // Move running thread to the ready queue
-    ready_queue.push_back(running_thread);
+    ready_queue.push_back (running_thread);
+  }
 
+  // Get the next thread to run
+  running_thread = ready_queue.front ();
+  ready_queue.pop_front ();
 
-    // Get the next thread to run
-    if (!ready_queue.empty()) {
-        running_thread = ready_queue.front();
-        ready_queue.pop_front();
-    }
+  // Set the state to RUNNING and increment quantum counter
+  running_thread->set_state (RUNNING);
+  siglongjmp (*(running_thread->get_env ()), 1);
 
-    // Set the state to RUNNING and increment quantum counter
-    running_thread->set_state(RUNNING);
-    siglongjmp(*(running_thread->get_env()), 1);
+  if (setitimer (ITIMER_VIRTUAL, &timer, nullptr) == -1)
+  {
+    print_system_error ("setitimer error.");
+    exit (1);
+  }
 }
 
-void timer_handler(int sig) {
-    // Increment quantum counter and switch threads if needed
-    switch_threads();
-    quantum_counter++;
+void timer_handler (int sig)
+{
+  // Increment quantum counter and switch threads if needed
+  quantum_counter++;
+  switch_threads ();
 }
-
 
 int uthread_init (int quantum_usecs)
 {
@@ -75,15 +92,14 @@ int uthread_init (int quantum_usecs)
 
   // Set up timer and signal handler
   struct sigaction sa = {0};
-  struct itimerval timer = {0};
 
   sa.sa_handler = &timer_handler;
-  sigemptyset(&sa.sa_mask); // Change: ensure signal mask is empty
+  sigemptyset (&sa.sa_mask);
   sa.sa_flags = 0;
 
-  if (sigaction(SIGVTALRM, &sa, NULL) < 0)
+  if (sigaction (SIGVTALRM, &sa, NULL) < 0)
   {
-      print_system_error("sigaction error.");
+    print_system_error ("sigaction error.");
   }
 
   timer.it_value.tv_sec = quantum_usecs / USECS_IN_SEC;
@@ -92,15 +108,15 @@ int uthread_init (int quantum_usecs)
   timer.it_interval.tv_usec = quantum_usecs % USECS_IN_SEC;
 
   // Start a virtual timer. It counts down whenever this process is executing.
-  if (setitimer(ITIMER_VIRTUAL, &timer, nullptr))
+  if (setitimer (ITIMER_VIRTUAL, &timer, nullptr))
   {
-      printf("setitimer error.");
+    print_system_error ("setitimer error.");
+    exit (1);
   }
 
   Thread *main = new Thread (0);
   threads[0] = main;
 // Add signals somehow
-// Add timer ????
   running_thread = main;
   main->set_state (RUNNING);
   quantum_counter = 1;
@@ -109,7 +125,6 @@ int uthread_init (int quantum_usecs)
 
 int uthread_spawn (thread_entry_point entry_point)
 {
-
   if (!entry_point)
   {
     print_library_error ("entry_point must not be null");
@@ -122,12 +137,12 @@ int uthread_spawn (thread_entry_point entry_point)
   }
   // Create new thread
   int next_index = indexes.top ();
-    indexes.pop ();
+  indexes.pop ();
   Thread *new_thread = new Thread (next_index, entry_point);
   threads[next_index] = new_thread;
   if (threads[next_index]->get_state () == READY) // Check this if is needed
   {
-    ready_queue.push_back(new_thread);
+    ready_queue.push_back (new_thread);
   }
 
   return next_index;
@@ -139,27 +154,46 @@ int uthread_terminate (int tid)
   if (tid == 0) // Terminating main
   {
 //     Check this is OK
+//TODO delete blocked, delete readys
     for (auto &thread: threads)
     {
       delete thread.second;
-      threads.erase ( thread.first);
+      threads.erase (thread.first);
     }
+    threads.clear ();
+    delete running_thread;
+    running_thread = nullptr;
+    ready_queue.clear();
     exit (0);
   }
   else
   {
     if (threads.find (tid) == threads.end ())
     {
-      print_library_error ("thread does not exist");
+      print_library_error ("in terminate: thread does not exist, tid: " +
+                           tid);
       return -1;
     }
     else
     {
 //      Handle termination
+      Thread *thread_to_terminate = threads[tid];
+      if (thread_to_terminate->get_state () == READY)
+      {
+        ready_queue.remove (thread_to_terminate);
+      }
 
-      delete threads[tid];
+      else if (tid == running_thread->get_tid ())
+      {
+        quantum_counter++;
+        switch_threads (true);
+
+      }
+      delete thread_to_terminate;
       threads.erase (tid);
-      indexes.push(tid);
+      indexes.push (tid);
+      // TODO Add remove from blocked
+
       return 0;
     }
   }
@@ -169,7 +203,7 @@ int uthread_block (int tid)
 {
   if (threads.find (tid) == threads.end ())
   {
-    print_library_error ("thread does not exist");
+    print_library_error ("in block: thread does not exist, tid: " + tid);
     return -1;
   }
   else if (tid == 0)
@@ -180,7 +214,7 @@ int uthread_block (int tid)
   // Change thread state
   if (threads[tid]->get_state () == RUNNING)
   {
-    sigsetjmp(*(threads[tid]->get_env()), 1);
+    sigsetjmp (*(threads[tid]->get_env ()), 1);
     // Handle thread blocking itself
   }
 
@@ -192,17 +226,17 @@ int uthread_resume (int tid)
 {
   if (threads.find (tid) == threads.end ())
   {
-    print_library_error ("thread does not exist");
+    print_library_error ("in resume: thread does not exist, tid: " + tid);
     return -1;
   }
-  else if (threads[tid]->get_state() != BLOCKED)
+  else if (threads[tid]->get_state () != BLOCKED)
   {
     return 0;
   }
 
 //  Change state to READY, add to queue
   threads[tid]->set_state (READY);
-  ready_queue.push_back(threads[tid]);
+  ready_queue.push_back (threads[tid]);
   return 0;
 }
 
@@ -226,7 +260,6 @@ int uthread_sleep (int num_quantums)
 
 int uthread_get_tid ()
 {
-
   return running_thread->get_tid ();
 }
 
@@ -240,7 +273,8 @@ int uthread_get_quantums (int tid)
 {
   if (threads.find (tid) == threads.end ())
   {
-    print_library_error ("thread does not exist");
+    print_library_error ("in get quantums: thread does not exist, tid " +
+                         tid);
     return -1;
   }
 // Return thread quantum counter
