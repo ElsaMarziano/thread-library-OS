@@ -8,6 +8,8 @@
 
 using namespace std;
 
+int USECS_IN_SEC = 1000000;
+
 int quantum_length;
 int quantum_counter;
 list<Thread *> ready_queue;
@@ -26,6 +28,32 @@ void print_library_error (string error)
   std::cerr << "thread library error: " << error << std::endl;
 }
 
+void switch_threads() {
+    // Save current thread state
+    running_thread->set_state(READY);
+
+    // Move running thread to the ready queue if it is not blocked
+    if (running_thread->get_state() != BLOCKED) {
+        ready_queue.push_back(running_thread);
+    }
+
+    // Get the next thread to run
+    if (!ready_queue.empty()) {
+        running_thread = ready_queue.front();
+        ready_queue.pop_front();
+    }
+
+    // Set the state to RUNNING and increment quantum counter
+    running_thread->set_state(RUNNING);
+}
+
+void timer_handler(int sig) {
+    // Increment quantum counter and switch threads if needed
+    switch_threads();
+    quantum_counter++;
+}
+
+
 int uthread_init (int quantum_usecs)
 {
   if (quantum_usecs <= 0)
@@ -35,6 +63,28 @@ int uthread_init (int quantum_usecs)
   }
   quantum_counter = 0;
   quantum_length = quantum_usecs;
+
+  // Set up timer and signal handler
+  struct sigaction sa = {0};
+  struct itimerval timer = {0};
+
+  sa.sa_handler = &timer_handler;
+  if (sigaction(SIGVTALRM, &sa, NULL) < 0)
+  {
+      printf("sigaction error.");
+  }
+
+  timer.it_value.tv_sec = quantum_usecs / USECS_IN_SEC;
+  timer.it_value.tv_usec = quantum_usecs % USECS_IN_SEC;
+  timer.it_interval.tv_sec = quantum_usecs / USECS_IN_SEC;
+  timer.it_interval.tv_usec = quantum_usecs % USECS_IN_SEC;
+
+  // Start a virtual timer. It counts down whenever this process is executing.
+  if (setitimer(ITIMER_VIRTUAL, &timer, nullptr))
+  {
+      printf("setitimer error.");
+  }
+
   Thread *main = new Thread (0);
   threads[0] = main;
 // Add signals somehow
