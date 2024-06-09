@@ -183,10 +183,10 @@ int uthread_terminate (int tid)
 //     Check this is OK
     for (auto &thread: threads)
     {
-      delete thread.second;
-      threads.erase (thread.first);
+
       if (thread.second->get_state () == READY
-          &&std::find(ready_queue.begin(), ready_queue.end(), thread.first) !=
+          && std::find(ready_queue.begin(), ready_queue.end(), thread
+          .second) !=
           ready_queue.end())
       {
         ready_queue.remove (thread.second);
@@ -195,6 +195,8 @@ int uthread_terminate (int tid)
       {
         sleeping_threads.erase (thread.first);
       }
+      delete thread.second;
+      threads.erase (thread.first);
     }
     threads.clear ();
     delete running_thread;
