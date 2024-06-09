@@ -17,7 +17,7 @@ int quantum_counter;
 list<Thread *> ready_queue;
 std::map<int, Thread *> threads;
 std::map<int, int> sleeping_threads;
-Thread *running_thread;
+Thread *running_thread = nullptr;
 priority_queue<int, vector<int>, greater<int> > indexes; // Min heap
 struct itimerval timer = {0};
 
@@ -39,9 +39,11 @@ void switch_threads (bool is_terminating = false)
 {
   if (ready_queue.empty ())
   {
-    running_thread->set_state (READY);
-    running_thread->set_state (RUNNING);
-    return;
+      if (running_thread != nullptr) {
+          running_thread->set_state(READY);
+          running_thread->set_state(RUNNING);
+          return;
+      }
   };
   if (sigsetjmp (*(running_thread->get_env ()), 1) == 1)
   {
@@ -186,7 +188,6 @@ int uthread_terminate (int tid)
 
       if (thread.second->get_state () == READY
           && std::find(ready_queue.begin(), ready_queue.end(), thread.second) !=
-          !=
           ready_queue.end())
       {
         ready_queue.remove (thread.second);
@@ -227,7 +228,7 @@ int uthread_terminate (int tid)
       {
         ready_queue.remove (thread_to_terminate);
       }
-      else if (tid == running_thread->get_tid ())
+      else if (running_thread != nullptr && tid == running_thread->get_tid ())
       {
         timer_handler (0, true);
 
@@ -253,7 +254,7 @@ int uthread_block (int tid)
     return -1;
   }
   // Change thread state
-  if (threads[tid]->get_state () == RUNNING)
+  if (threads[tid] != nullptr && threads[tid]->get_state () == RUNNING)
   {
     sigsetjmp (*(threads[tid]->get_env ()), 1);
     timer_handler (0, true);
@@ -303,10 +304,12 @@ int uthread_sleep (int num_quantums)
     return -1;
   }
   sleeping_threads[uthread_get_tid ()] = num_quantums;
-  if(threads[uthread_get_tid ()]->get_state () == RUNNING)
+  if(threads[uthread_get_tid ()] != nullptr &&
+  threads[uthread_get_tid ()]->get_state () == RUNNING)
   {
     timer_handler (0, true);
-  } else if (threads[uthread_get_tid ()]->get_state () == READY)
+  } else if (threads[uthread_get_tid ()] != nullptr &&
+  threads[uthread_get_tid ()]->get_state () == READY)
   {
     ready_queue.remove (threads[uthread_get_tid ()]);
   }
