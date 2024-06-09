@@ -57,14 +57,11 @@ void resumeTimer ()
 
 void switch_threads (bool is_terminating = false)
 {
-  if (ready_queue.empty ())
+  if (ready_queue.empty () && running_thread != nullptr)
   {
-    if (running_thread != nullptr)
-    {
       running_thread->set_state (READY);
       running_thread->set_state (RUNNING);
       return;
-    }
   };
   if (sigsetjmp (*(running_thread->get_env ()), 1) == 1)
   {
@@ -98,13 +95,13 @@ void timer_handler (int sig, bool isTerminating = false)
   quantum_counter++;
   vector<int> to_awake;
 
-  for (auto &thread: sleeping_threads)
+  for (auto thread = sleeping_threads.begin(); thread != sleeping_threads.end(); )
   {
-    thread.second--;
-    if (thread.second == 0)
+    thread->second--;
+    if (thread->second == 0)
     {
-      to_awake.push_back (thread.first);
-      sleeping_threads.erase (thread.first);
+      to_awake.push_back (thread->first);
+      sleeping_threads.erase (thread->first);
 
     }
   }
@@ -189,15 +186,13 @@ int uthread_spawn (thread_entry_point entry_point)
   if (!entry_point)
   {
     print_library_error ("entry_point must not be null");
-    resumeTimer();
-
+    resumeTimer ();
     return -1;
   }
   if (ready_queue.size () >= MAX_THREAD_NUM)
   {
     print_library_error ("thread limit reached");
-    resumeTimer();
-
+    resumeTimer ();
     return -1;
   }
   // Create new thread
@@ -205,46 +200,45 @@ int uthread_spawn (thread_entry_point entry_point)
   indexes.pop ();
   Thread *new_thread = new Thread (next_index, entry_point);
   threads[next_index] = new_thread;
-  if (threads[next_index]->get_state () == READY) // Check this if is needed
+  if (threads[next_index] != nullptr && threads[next_index]->get_state () ==
+  READY)
   {
     ready_queue.push_back (new_thread);
   }
-  resumeTimer();
-
+  resumeTimer ();
   return next_index;
 }
 
 int uthread_terminate (int tid)
 {
   blockTimer ();
-  if (tid == 0) // Terminating main
+  if (tid == 0 && running_thread->get_tid() == 0) // Terminating main
   {
-    for (auto &thread: threads)
-    {
-      if (thread.second->get_state () == READY
-          && std::find (ready_queue.begin (), ready_queue.end (), thread
-              .second) !=
-             ready_queue.end ())
-      {
-        ready_queue.remove (thread.second);
-      }
-      if (sleeping_threads.find (thread.first) != sleeping_threads.end ())
-      {
-        sleeping_threads.erase (thread.first);
-      }
-      delete thread.second;
-      threads.erase (thread.first);
-    }
-    threads.clear ();
-    delete running_thread;
-    running_thread = nullptr;
     ready_queue.clear ();
     sleeping_threads.clear ();
+    for (auto thread = threads.begin(); thread != threads.end(); )
+    {
+      if(thread->second->get_tid() != 0)
+      {
+        delete thread->second;
+        thread->second = nullptr;
+        threads.erase (thread);
+      }
+    }
+//    delete running_thread;
+//    running_thread = nullptr;
+//    resumeTimer();
     exit (0);
   }
   else
   {
-    if (threads.find (tid) == threads.end ())
+    if(tid == 0)
+    {
+      print_library_error ("cannot terminate main thread");
+      resumeTimer ();
+      return -1;
+    }
+    else if (threads.find (tid) == threads.end ())
     {
       print_library_error ("in terminate: thread does not exist, tid: " + tid);
       resumeTimer ();
@@ -266,16 +260,16 @@ int uthread_terminate (int tid)
       }
       else if (running_thread != nullptr && tid == running_thread->get_tid ())
       {
-        delete thread_to_terminate;
-        threads.erase (tid);
         indexes.push (tid);
-        timer_handler (0, true);
+        threads.erase (tid);
+        delete thread_to_terminate;
         resumeTimer ();
+        timer_handler (0, true);
         return 0;
       }
-      delete thread_to_terminate;
       threads.erase (tid);
       indexes.push (tid);
+      delete thread_to_terminate;
       resumeTimer ();
       return 0;
     }
@@ -381,27 +375,26 @@ int uthread_get_tid ()
 }
 
 int uthread_get_total_quantums ()
-{ blockTimer();
+{
+  blockTimer ();
   int count = quantum_counter;
-  resumeTimer();
-return count;
+  resumeTimer ();
+  return count;
 }
 
 int uthread_get_quantums (int tid)
 {
-    blockTimer ();
+  blockTimer ();
   if (threads.find (tid) == threads.end ())
   {
-    print_library_error ("in get quantums: thread does not exist, tid " +
-                         tid);
-    resumeTimer();
-
+    print_library_error ("in get quantums: thread does not exist, tid " + tid);
+    resumeTimer ();
     return -1;
   }
 // Return thread quantum counter
-  int counter =  threads[tid]->get_quantum_counter ();
-  resumeTimer();
-return counter;
+  int counter = threads[tid]->get_quantum_counter ();
+  resumeTimer ();
+  return counter;
 }
 
 
