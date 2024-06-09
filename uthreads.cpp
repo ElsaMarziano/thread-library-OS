@@ -16,6 +16,7 @@ int quantum_length;
 int quantum_counter;
 list<Thread *> ready_queue;
 std::map<int, Thread *> threads;
+std::map<int, int> sleeping_threads;
 Thread *running_thread;
 priority_queue<int, vector<int>, greater<int> > indexes; // Min heap
 struct itimerval timer = {0};
@@ -30,7 +31,7 @@ void print_system_error (string error)
 
 void print_library_error (string error)
 {
-//  std::cerr << "thread library error: " << error << std::endl;
+  std::cerr << "thread library error: " << error << std::endl;
   return;
 }
 
@@ -69,11 +70,37 @@ void switch_threads (bool is_terminating = false)
   }
 }
 
-void timer_handler (int sig)
+
+void timer_handler (int sig, bool isTerminating = false)
 {
   // Increment quantum counter and switch threads if needed
   quantum_counter++;
-  switch_threads ();
+  vector<int> to_awake;
+
+  for (auto &thread: sleeping_threads)
+  {
+    thread.second--;
+    if (thread.second == 0)
+    {
+      sleeping_threads.erase (thread.first);
+      if (thread.second == 0) {
+        to_awake.push_back(thread.first);
+      }
+    }
+  }
+  for (int tid : to_awake) {
+    sleeping_threads.erase(tid);
+    if (threads[tid]->get_state() == READY) {
+      ready_queue.push_back(threads[tid]);
+    }
+  }
+  switch_threads (isTerminating);
+
+}
+
+void timer_handler_no_bool (int sig)
+{
+  timer_handler (sig, false);
 }
 
 int uthread_init (int quantum_usecs)
@@ -93,7 +120,7 @@ int uthread_init (int quantum_usecs)
   // Set up timer and signal handler
   struct sigaction sa = {0};
 
-  sa.sa_handler = &timer_handler;
+  sa.sa_handler = &timer_handler_no_bool;
   sigemptyset (&sa.sa_mask);
   sa.sa_flags = 0;
 
@@ -154,16 +181,26 @@ int uthread_terminate (int tid)
   if (tid == 0) // Terminating main
   {
 //     Check this is OK
-//TODO delete blocked, delete readys
     for (auto &thread: threads)
     {
       delete thread.second;
       threads.erase (thread.first);
+      if (thread.second->get_state () == READY
+          &&std::find(ready_queue.begin(), ready_queue.end(), thread.first) !=
+          ready_queue.end())
+      {
+        ready_queue.remove (thread.second);
+      }
+      if (sleeping_threads.find (thread.first) != sleeping_threads.end ())
+      {
+        sleeping_threads.erase (thread.first);
+      }
     }
     threads.clear ();
     delete running_thread;
     running_thread = nullptr;
-    ready_queue.clear();
+    ready_queue.clear ();
+    sleeping_threads.clear ();
     exit (0);
   }
   else
@@ -178,22 +215,24 @@ int uthread_terminate (int tid)
     {
 //      Handle termination
       Thread *thread_to_terminate = threads[tid];
-      if (thread_to_terminate->get_state () == READY)
+      if (sleeping_threads.find (tid) != sleeping_threads.end ())
+      {
+        sleeping_threads.erase (tid);
+      }
+      else if (thread_to_terminate->get_state () == READY &&
+      std::find(ready_queue.begin(), ready_queue.end(), thread_to_terminate)
+      != ready_queue.end())
       {
         ready_queue.remove (thread_to_terminate);
       }
-
       else if (tid == running_thread->get_tid ())
       {
-        quantum_counter++;
-        switch_threads (true);
+        timer_handler (0, true);
 
       }
       delete thread_to_terminate;
       threads.erase (tid);
       indexes.push (tid);
-      // TODO Add remove from blocked
-
       return 0;
     }
   }
@@ -215,15 +254,20 @@ int uthread_block (int tid)
   if (threads[tid]->get_state () == RUNNING)
   {
     sigsetjmp (*(threads[tid]->get_env ()), 1);
-    // Handle thread blocking itself
+    timer_handler (0, true);
   }
-
+  if (std::find(ready_queue.begin(), ready_queue.end(), threads[tid]) !=
+  ready_queue.end())
+  {
+    ready_queue.remove (threads[tid]);
+  }
   threads[tid]->set_state (BLOCKED);
   return 0;
 }
 
 int uthread_resume (int tid)
 {
+
   if (threads.find (tid) == threads.end ())
   {
     print_library_error ("in resume: thread does not exist, tid: " + tid);
@@ -236,7 +280,11 @@ int uthread_resume (int tid)
 
 //  Change state to READY, add to queue
   threads[tid]->set_state (READY);
-  ready_queue.push_back (threads[tid]);
+//  Add to ready only if it's not sleeping
+  if (sleeping_threads.find (tid) == sleeping_threads.end ())
+  {
+    ready_queue.push_back (threads[tid]);
+  }
   return 0;
 }
 
@@ -252,9 +300,14 @@ int uthread_sleep (int num_quantums)
     print_library_error ("cannot put main thread to sleep");
     return -1;
   }
-//  Change state to BLOCKED
-  uthread_block (running_thread->get_tid ());
-//  Add to blocked queue
+  sleeping_threads[uthread_get_tid ()] = num_quantums;
+  if(threads[uthread_get_tid ()]->get_state () == RUNNING)
+  {
+    timer_handler (0, true);
+  } else if (threads[uthread_get_tid ()]->get_state () == READY)
+  {
+    ready_queue.remove (threads[uthread_get_tid ()]);
+  }
   return 0;
 }
 
