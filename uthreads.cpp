@@ -24,9 +24,6 @@ sigset_t signals;
 struct sigaction sa = {0};
 
 
-// Add counter map for blocked threads
-
-
 void print_system_error (string error)
 {
   std::cerr << "system error: " << error << std::endl;
@@ -61,15 +58,13 @@ void switch_threads (bool is_terminating = false)
 {
   if (ready_queue.empty () && running_thread != nullptr)
   {
-    running_thread->set_state (READY);
-    running_thread->set_state (RUNNING);
-    return;
+      running_thread->set_state (READY);
+      running_thread->set_state (RUNNING);
+      return;
   };
-  std::cout << *(running_thread->get_env ()) << std::endl;
-  if (sigsetjmp (*(running_thread->get_env ()), 1) < 0)
+  if(sigsetjmp (*(running_thread->get_env ()), 1) == 1)
   {
-    print_system_error ("sigsetjmp error");
-    exit (1);
+    return;
   }
   // Save current thread state
   if (!is_terminating)
@@ -84,8 +79,7 @@ void switch_threads (bool is_terminating = false)
 
   // Set the state to RUNNING and increment quantum counter
   running_thread->set_state (RUNNING);
-
-  siglongjmp (*(running_thread->get_env ()), 1) ;
+  siglongjmp (*(running_thread->get_env ()), 1);
 
   if (setitimer (ITIMER_VIRTUAL, &timer, nullptr) == -1)
   {
@@ -99,8 +93,7 @@ void timer_handler (int sig, bool isTerminating = false)
   // Increment quantum counter and switch threads if needed
   quantum_counter++;
   vector<int> to_awake;
-  for (auto thread = sleeping_threads.begin ();
-       thread != sleeping_threads.end ();)
+  for (auto thread = sleeping_threads.begin(); thread != sleeping_threads.end(); )
   {
     thread->second--;
     if (thread->second == 0)
@@ -143,10 +136,9 @@ int uthread_init (int quantum_usecs)
   threads[0] = main;
   // Set up timer and signal handler
   sa.sa_handler = &timer_handler_no_bool;
-  if (sigemptyset (&sa.sa_mask) == -1)
-  {
+  if(sigemptyset (&sa.sa_mask) == -1) {
     print_system_error ("sigemptyset error.");
-    exit (1);
+    exit(1);
   }
   sa.sa_flags = 0;
 
@@ -206,7 +198,7 @@ int uthread_spawn (thread_entry_point entry_point)
   Thread *new_thread = new Thread (next_index, entry_point);
   threads[next_index] = new_thread;
   if (threads[next_index] != nullptr && threads[next_index]->get_state () ==
-                                        READY)
+  READY)
   {
     ready_queue.push_back (new_thread);
   }
@@ -216,18 +208,17 @@ int uthread_spawn (thread_entry_point entry_point)
 
 int uthread_terminate (int tid)
 {
-  fflush (stdout);
   blockTimer ();
-  if (tid == 0 && running_thread->get_tid () == 0) // Terminating main
+  if (tid == 0 && running_thread->get_tid() == 0) // Terminating main
   {
     ready_queue.clear ();
     sleeping_threads.clear ();
-    for (auto thread = threads.begin (); thread != threads.end ();)
+    for (auto thread = threads.begin(); thread != threads.end(); )
     {
-      if (thread->first != 0)
+      if(thread->first != 0)
       {
         delete thread->second;
-        thread = threads.erase (thread);
+        thread = threads.erase(thread);
       }
       else
       {
@@ -238,7 +229,7 @@ int uthread_terminate (int tid)
   }
   else
   {
-    if (tid == 0)
+    if(tid == 0)
     {
       print_library_error ("cannot terminate main thread");
       resumeTimer ();

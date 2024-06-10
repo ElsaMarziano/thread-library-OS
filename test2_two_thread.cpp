@@ -41,6 +41,7 @@ void f()
     int id = uthread_get_tid();
     int rounds = -1;
     while (rounds < maxRounds){
+
       if(currId != id){
             currId = id;
             printf("***%d***\n", id);

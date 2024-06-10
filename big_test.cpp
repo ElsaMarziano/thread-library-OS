@@ -18,6 +18,7 @@ int MAIN_THREAD = 0;
 int QUANTOM = 1000000;
 
 void send_sigalarm(){
+  fflush(stdout);
   kill(getpid(),SIGVTALRM);
 }
 
