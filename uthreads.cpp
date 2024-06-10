@@ -21,6 +21,8 @@ Thread *running_thread = nullptr;
 priority_queue<int, vector<int>, greater<int> > indexes; // Min heap
 struct itimerval timer = {0};
 sigset_t signals;
+struct sigaction sa = {0};
+
 
 // Add counter map for blocked threads
 
@@ -59,19 +61,21 @@ void switch_threads (bool is_terminating = false)
 {
   if (ready_queue.empty () && running_thread != nullptr)
   {
-      running_thread->set_state (READY);
-      running_thread->set_state (RUNNING);
-      return;
-  };
-  if (sigsetjmp (*(running_thread->get_env ()), 1) == 1)
-  {
+    running_thread->set_state (READY);
+    running_thread->set_state (RUNNING);
     return;
+  };
+  std::cout << *(running_thread->get_env ()) << std::endl;
+  if (sigsetjmp (*(running_thread->get_env ()), 1) < 0)
+  {
+    print_system_error ("sigsetjmp error");
+    exit (1);
   }
   // Save current thread state
   if (!is_terminating)
   {
-    running_thread->set_state (READY);
     // Move running thread to the ready queue
+    running_thread->set_state (READY);
     ready_queue.push_back (running_thread);
   }
   // Get the next thread to run
@@ -80,7 +84,8 @@ void switch_threads (bool is_terminating = false)
 
   // Set the state to RUNNING and increment quantum counter
   running_thread->set_state (RUNNING);
-  siglongjmp (*(running_thread->get_env ()), 1);
+
+  siglongjmp (*(running_thread->get_env ()), 1) ;
 
   if (setitimer (ITIMER_VIRTUAL, &timer, nullptr) == -1)
   {
@@ -94,15 +99,14 @@ void timer_handler (int sig, bool isTerminating = false)
   // Increment quantum counter and switch threads if needed
   quantum_counter++;
   vector<int> to_awake;
-
-  for (auto thread = sleeping_threads.begin(); thread != sleeping_threads.end(); )
+  for (auto thread = sleeping_threads.begin ();
+       thread != sleeping_threads.end ();)
   {
     thread->second--;
     if (thread->second == 0)
     {
       to_awake.push_back (thread->first);
       sleeping_threads.erase (thread->first);
-
     }
   }
 
@@ -115,7 +119,6 @@ void timer_handler (int sig, bool isTerminating = false)
     }
   }
   switch_threads (isTerminating);
-
 }
 
 void timer_handler_no_bool (int sig)
@@ -136,12 +139,15 @@ int uthread_init (int quantum_usecs)
   }
   quantum_counter = 0;
   quantum_length = quantum_usecs;
-
+  Thread *main = new Thread (0);
+  threads[0] = main;
   // Set up timer and signal handler
-  struct sigaction sa = {0};
-
   sa.sa_handler = &timer_handler_no_bool;
-  sigemptyset (&sa.sa_mask);
+  if (sigemptyset (&sa.sa_mask) == -1)
+  {
+    print_system_error ("sigemptyset error.");
+    exit (1);
+  }
   sa.sa_flags = 0;
 
   if (sigaction (SIGVTALRM, &sa, NULL) < 0)
@@ -154,6 +160,8 @@ int uthread_init (int quantum_usecs)
   timer.it_interval.tv_sec = quantum_usecs / USECS_IN_SEC;
   timer.it_interval.tv_usec = quantum_usecs % USECS_IN_SEC;
 
+  running_thread = main;
+  main->set_state (RUNNING);
   // Start a virtual timer. It counts down whenever this process is executing.
   if (setitimer (ITIMER_VIRTUAL, &timer, nullptr))
   {
@@ -171,11 +179,8 @@ int uthread_init (int quantum_usecs)
     print_system_error ("sigaddset error.");
     exit (1);
   }
-  Thread *main = new Thread (0);
-  threads[0] = main;
+
 // Add signals somehow
-  running_thread = main;
-  main->set_state (RUNNING);
   quantum_counter = 1;
   return 0;
 }
@@ -189,7 +194,7 @@ int uthread_spawn (thread_entry_point entry_point)
     resumeTimer ();
     return -1;
   }
-  if (ready_queue.size () >= MAX_THREAD_NUM)
+  if (threads.size () >= MAX_THREAD_NUM)
   {
     print_library_error ("thread limit reached");
     resumeTimer ();
@@ -201,7 +206,7 @@ int uthread_spawn (thread_entry_point entry_point)
   Thread *new_thread = new Thread (next_index, entry_point);
   threads[next_index] = new_thread;
   if (threads[next_index] != nullptr && threads[next_index]->get_state () ==
-  READY)
+                                        READY)
   {
     ready_queue.push_back (new_thread);
   }
@@ -211,28 +216,29 @@ int uthread_spawn (thread_entry_point entry_point)
 
 int uthread_terminate (int tid)
 {
+  fflush (stdout);
   blockTimer ();
-  if (tid == 0 && running_thread->get_tid() == 0) // Terminating main
+  if (tid == 0 && running_thread->get_tid () == 0) // Terminating main
   {
     ready_queue.clear ();
     sleeping_threads.clear ();
-    for (auto thread = threads.begin(); thread != threads.end(); )
+    for (auto thread = threads.begin (); thread != threads.end ();)
     {
-      if(thread->second->get_tid() != 0)
+      if (thread->first != 0)
       {
         delete thread->second;
-        thread->second = nullptr;
-        threads.erase (thread);
+        thread = threads.erase (thread);
+      }
+      else
+      {
+        ++thread;
       }
     }
-//    delete running_thread;
-//    running_thread = nullptr;
-//    resumeTimer();
     exit (0);
   }
   else
   {
-    if(tid == 0)
+    if (tid == 0)
     {
       print_library_error ("cannot terminate main thread");
       resumeTimer ();
